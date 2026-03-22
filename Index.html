@@ -51,6 +51,47 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Mon
 }
 #addBtn:active{transform:scale(0.88);}
 
+/* Briefing button */
+#briefBtn{
+  flex-shrink:0;margin-left:8px;
+  width:34px;height:34px;
+  background:transparent;
+  border:1px solid var(--border2);border-radius:50%;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all 0.15s;
+  position:relative;
+}
+#briefBtn:active{transform:scale(0.88);}
+#briefBtn.fresh{border-color:var(--gold);box-shadow:0 0 8px rgba(201,168,76,0.2);}
+#briefBtn .brief-dot{
+  position:absolute;top:2px;right:2px;
+  width:6px;height:6px;border-radius:50%;
+  background:var(--gold);display:none;
+}
+#briefBtn.fresh .brief-dot{display:block;}
+
+/* ── BRIEFING SHEET ── */
+#briefSheet{max-height:90dvh;}
+.brief-date{font-size:9px;letter-spacing:0.2em;color:var(--text3);text-transform:uppercase;margin-bottom:18px;}
+.brief-loading{text-align:center;padding:40px 0;color:var(--text3);font-size:12px;letter-spacing:0.1em;}
+.brief-loading .spin{display:inline-block;width:18px;height:18px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:10px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.brief-section{margin-bottom:22px;}
+.brief-sec-title{
+  font-size:9px;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--gold);margin-bottom:8px;
+  display:flex;align-items:center;gap:7px;
+}
+.brief-sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
+.brief-body{font-size:13px;color:var(--text2);line-height:1.75;}
+.brief-body p{margin-bottom:8px;}
+.brief-body p:last-child{margin-bottom:0;}
+.brief-item{margin-bottom:7px;padding-left:12px;position:relative;font-size:13px;color:var(--text2);line-height:1.65;}
+.brief-item::before{content:'·';position:absolute;left:0;color:var(--gold);}
+.brief-footer{margin-top:18px;padding-top:14px;border-top:1px solid var(--border);font-size:10px;color:var(--text3);text-align:center;letter-spacing:0.08em;}
+.brief-refresh{display:inline-block;margin-top:10px;padding:7px 16px;background:transparent;border:1px solid var(--border2);border-radius:20px;font-size:10px;letter-spacing:0.12em;color:var(--text3);cursor:pointer;font-family:'DM Mono',monospace;text-transform:uppercase;}
+.brief-refresh:active{opacity:0.6;}
+
 /* Spend row */
 .hdr-mid{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:12px;}
 .hdr-spend-block{}
@@ -263,6 +304,13 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Mon
         <div class="hdr-eyebrow">Personal Edition</div>
         <div class="hdr-title">The <em>List</em></div>
       </div>
+      <button id="briefBtn" onclick="openBriefing()" aria-label="Morning briefing">
+        <div class="brief-dot"></div>
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+          <rect x="1" y="2" width="13" height="11" rx="1.5" stroke="#8C8272" stroke-width="1.4"/>
+          <path d="M4 5.5h7M4 8h5M4 10.5h6" stroke="#8C8272" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </button>
       <button id="addBtn" onclick="openAdd()" aria-label="Add item">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
           <path d="M8 3v10M3 8h10" stroke="#080806" stroke-width="2" stroke-linecap="round"/>
@@ -332,6 +380,16 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Mon
   </div>
 </div>
 
+<!-- BRIEFING MODAL -->
+<div class="overlay hidden" id="briefModal">
+  <div class="sheet" id="briefSheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Morning Briefing</div>
+    <div class="brief-date" id="briefDate"></div>
+    <div id="briefContent"></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -385,7 +443,7 @@ function saveKey(){
 }
 
 // ── BOOT ─────────────────────────────────────────────────────────────────────
-function boot(){buildTabs();buildSelects();render();maybeCheckPrices();}
+function boot(){buildTabs();buildSelects();render();maybeCheckPrices();checkBriefButton();}
 
 // ── TABS ─────────────────────────────────────────────────────────────────────
 function buildTabs(){
@@ -681,6 +739,110 @@ function doAdd(){
   S.tab=cat;save();render();closeAdd();
   showToast('Added to '+CM[cat].label);
 }
+
+// ── BRIEFING ─────────────────────────────────────────────────────────────────
+const BRIEF_SECTIONS=[
+  {key:'world',    label:'World News',          icon:'🌐'},
+  {key:'geo',      label:'Geopolitics',         icon:'♟'},
+  {key:'conflicts',label:'Conflicts',           icon:'⚔'},
+  {key:'economy',  label:'US Economy & Health', icon:'📊'},
+  {key:'tech',     label:'Tech',                icon:'⚡'},
+  {key:'weather',  label:'Weather',             icon:'🌦'},
+  {key:'ai',       label:'AI & Claude',         icon:'✦'},
+];
+
+function todayKey(){const d=new Date();return `brief-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+
+function openBriefing(){
+  document.getElementById('briefModal').classList.remove('hidden');
+  const tk=todayKey();
+  const cached=S.brief&&S.brief.key===tk?S.brief:null;
+  if(cached){renderBriefing(cached.data,false);}
+  else{fetchBriefing();}
+}
+
+function closeBriefing(){document.getElementById('briefModal').classList.add('hidden');}
+
+async function fetchBriefing(force){
+  if(!S.key){
+    document.getElementById('briefContent').innerHTML='<div style="color:var(--text3);font-size:12px;padding:20px 0;text-align:center">Add your Anthropic API key to enable briefings.</div>';
+    return;
+  }
+  showBriefLoading();
+  const today=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const prompt=`Today is ${today}. Search the web and produce a concise morning briefing in JSON. Return ONLY valid JSON (no markdown) in this exact shape:
+{
+  "world":   ["bullet 1","bullet 2","bullet 3"],
+  "geo":     ["bullet 1","bullet 2","bullet 3"],
+  "conflicts":["bullet 1","bullet 2","bullet 3"],
+  "economy": ["bullet 1","bullet 2","bullet 3"],
+  "tech":    ["bullet 1","bullet 2","bullet 3"],
+  "weather": ["bullet 1 (major US weather events or patterns today)","bullet 2"],
+  "ai":      ["bullet 1 (Claude/Anthropic news, major AI news)","bullet 2","bullet 3"]
+}
+Each bullet: 1 crisp sentence, factual, no fluff. Cover events from the last 24 hours. For conflicts include active hot-spots. For economy include markets, inflation, jobs. For AI include any Claude/Anthropic announcements and major LLM/AI news.`;
+
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':S.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',max_tokens:1800,
+        tools:[{type:'web_search_20250305',name:'web_search'}],
+        system:'You are a concise briefing assistant. Always use web search to gather today\'s real news before answering. Respond ONLY with valid JSON, no markdown, no commentary.',
+        messages:[{role:'user',content:prompt}]
+      })
+    });
+    const d=await r.json();
+    const txt=d.content?.find(b=>b.type==='text')?.text||'';
+    const data=JSON.parse(txt.replace(/```json|```/g,'').trim());
+    const tk=todayKey();
+    S.brief={key:tk,data};
+    save();
+    renderBriefing(data,true);
+    // mark button fresh
+    document.getElementById('briefBtn').classList.remove('fresh');
+  }catch(e){
+    document.getElementById('briefContent').innerHTML=`<div style="color:var(--red);font-size:12px;padding:20px 0;text-align:center">Failed to load briefing.<br><button class="brief-refresh" onclick="fetchBriefing(true)">Retry</button></div>`;
+  }
+}
+
+function showBriefLoading(){
+  const today=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  document.getElementById('briefDate').textContent=today;
+  document.getElementById('briefContent').innerHTML=`<div class="brief-loading"><div class="spin"></div><br>Searching the web...</div>`;
+}
+
+function renderBriefing(data,fresh){
+  const today=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  document.getElementById('briefDate').textContent=today;
+  let html='';
+  BRIEF_SECTIONS.forEach(sec=>{
+    const items=data[sec.key];
+    if(!items||!items.length)return;
+    html+=`<div class="brief-section">
+      <div class="brief-sec-title">${sec.icon} ${sec.label}</div>
+      ${items.map(b=>`<div class="brief-item">${b}</div>`).join('')}
+    </div>`;
+  });
+  html+=`<div class="brief-footer">
+    Sourced via Claude + web search
+    <br><button class="brief-refresh" onclick="fetchBriefing(true)">Refresh</button>
+  </div>`;
+  document.getElementById('briefContent').innerHTML=html;
+}
+
+function checkBriefButton(){
+  const tk=todayKey();
+  const hasToday=S.brief&&S.brief.key===tk;
+  if(!hasToday)document.getElementById('briefBtn').classList.add('fresh');
+  else document.getElementById('briefBtn').classList.remove('fresh');
+}
+
+// close briefing on overlay click
+document.addEventListener('click',e=>{
+  if(e.target.id==='briefModal')closeBriefing();
+});
 
 // ── UTILS ────────────────────────────────────────────────────────────────────
 function monthKey(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;}
